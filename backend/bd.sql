@@ -2,7 +2,7 @@
 CREATE DATABASE restaurante;
 USE restaurante;
 
--- Tabla de usuarios
+-- Table for users
 CREATE TABLE usuarios (
     id_usuario INT AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(50) NOT NULL,
@@ -12,18 +12,17 @@ CREATE TABLE usuarios (
     tipo_usuario ENUM('administrador', 'vendedor') NOT NULL
 );
 
--- Tabla de productos
+-- Table for products
 CREATE TABLE productos (
     id_producto INT AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
     descripcion TEXT,
     precio_compra DECIMAL(10, 2) NOT NULL,
     precio_venta DECIMAL(10, 2) NOT NULL,
-    stock INT NOT NULL,
     fecha_vencimiento DATE
 );
 
--- Tabla de ventas
+-- Table for sales
 CREATE TABLE ventas (
     id_venta INT AUTO_INCREMENT PRIMARY KEY,
     id_usuario INT,
@@ -32,7 +31,7 @@ CREATE TABLE ventas (
     FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario)
 );
 
--- Tabla de detalle de ventas
+-- Table for sale details
 CREATE TABLE detalle_ventas (
     id_detalle INT AUTO_INCREMENT PRIMARY KEY,
     id_venta INT,
@@ -44,152 +43,194 @@ CREATE TABLE detalle_ventas (
     FOREIGN KEY (id_producto) REFERENCES productos(id_producto)
 );
 
--- Tabla de productos desperdiciados
-CREATE TABLE productos_desperdiciados (
-    id_desperdicio INT AUTO_INCREMENT PRIMARY KEY,
+-- Table for suppliers
+CREATE TABLE proveedores (
+    id_proveedor INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    direccion VARCHAR(255),
+    telefono VARCHAR(20)
+    );
+
+-- Table for purchases
+CREATE TABLE compras (
+    id_compra INT AUTO_INCREMENT PRIMARY KEY,
+    id_proveedor INT,
+    id_usuario INT,
+    fecha_compra DATETIME DEFAULT CURRENT_TIMESTAMP,
+    total DECIMAL(10, 2) NOT NULL,
+    FOREIGN KEY (id_proveedor) REFERENCES proveedores(id_proveedor),
+    FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario)
+);
+
+-- Table for purchase details
+CREATE TABLE detalle_compras (
+    id_detalle_compra INT AUTO_INCREMENT PRIMARY KEY,
+    id_compra INT,
     id_producto INT,
     cantidad INT NOT NULL,
-    fecha_desperdicio DATE NOT NULL,
-    motivo VARCHAR(255) NOT NULL,
+    precio_unitario DECIMAL(10, 2) NOT NULL,
+    subtotal DECIMAL(10, 2) NOT NULL,
+    lote VARCHAR(50),
+    fecha_caducidad DATE,
+    FOREIGN KEY (id_compra) REFERENCES compras(id_compra),
     FOREIGN KEY (id_producto) REFERENCES productos(id_producto)
 );
 
+-- Table for inventory
+CREATE TABLE inventario (
+    id_inventario INT AUTO_INCREMENT PRIMARY KEY,
+    id_producto INT,
+    cantidad INT NOT NULL,
+    lote VARCHAR(50),
+    fecha_caducidad DATE,
+    FOREIGN KEY (id_producto) REFERENCES productos(id_producto)
+);
 
-// Para crear un reporte de ventas
-SELECT v.id_venta, v.fecha_venta, u.nombre AS vendedor, v.total,
-       GROUP_CONCAT(p.nombre SEPARATOR ', ') AS productos
-FROM ventas v
-JOIN usuarios u ON v.id_usuario = u.id_usuario
-JOIN detalle_ventas dv ON v.id_venta = dv.id_venta
-JOIN productos p ON dv.id_producto = p.id_producto
-GROUP BY v.id_venta
-ORDER BY v.fecha_venta DESC;
+-- Table for wasted products
+CREATE TABLE productos_desperdiciados (
+    id_desperdicio INT AUTO_INCREMENT PRIMARY KEY,
+    id_inventario INT,
+    cantidad INT NOT NULL,
+    fecha_desperdicio DATE NOT NULL,
+    motivo VARCHAR(255) NOT NULL,
+    FOREIGN KEY (id_inventario) REFERENCES inventario(id_inventario)
+);
 
+-- Table for inventory movements
+CREATE TABLE movimientos_inventario (
+    id_movimiento INT AUTO_INCREMENT PRIMARY KEY,
+    id_inventario INT,
+    tipo_movimiento ENUM('entrada', 'salida', 'ajuste') NOT NULL,
+    cantidad INT NOT NULL,
+    fecha_movimiento DATETIME DEFAULT CURRENT_TIMESTAMP,
+    id_referencia INT,
+    tipo_referencia ENUM('compra', 'venta', 'desperdicio', 'ajuste') NOT NULL,
+    FOREIGN KEY (id_inventario) REFERENCES inventario(id_inventario)
+);
 
-// Ventas totales por día:
-
-SELECT DATE(fecha_venta) AS fecha, SUM(total) AS venta_total
-FROM ventas
-GROUP BY DATE(fecha_venta)
-ORDER BY fecha DESC;
-
-// Top 10 productos más vendidos:
-
-SELECT p.nombre, SUM(dv.cantidad) AS total_vendido, SUM(dv.subtotal) AS ingreso_total
-FROM detalle_ventas dv
-JOIN productos p ON dv.id_producto = p.id_producto
-GROUP BY dv.id_producto
-ORDER BY total_vendido DESC
-LIMIT 10;
-
-// Productos con bajo stock (menos de 10 unidades):
-
-SELECT nombre, stock
-FROM productos
-WHERE stock < 10
-ORDER BY stock ASC;
-
-// Reporte de desperdicios:
-
-SELECT p.nombre, SUM(pd.cantidad) AS total_desperdiciado, 
-       SUM(pd.cantidad * p.precio_compra) AS costo_total
-FROM productos_desperdiciados pd
-JOIN productos p ON pd.id_producto = p.id_producto
-GROUP BY pd.id_producto
-ORDER BY total_desperdiciado DESC;
-
-// Margen de ganancia por producto:
-
-SELECT p.nombre, 
-       p.precio_venta, 
-       p.precio_compra, 
-       (p.precio_venta - p.precio_compra) AS margen,
-       ((p.precio_venta - p.precio_compra) / p.precio_compra * 100) AS porcentaje_margen
-FROM productos p
-ORDER BY porcentaje_margen DESC;
-
-// Ahora, vamos a crear procedimientos almacenados para automatizar estos reportes:
+-- Trigger to update inventory after a purchase
 DELIMITER //
-
--- 1. Ventas totales por día
-CREATE PROCEDURE sp_ventas_por_dia(IN fecha_inicio DATE, IN fecha_fin DATE)
+CREATE TRIGGER after_purchase_detail_insert
+AFTER INSERT ON detalle_compras
+FOR EACH ROW
 BEGIN
-    SELECT DATE(fecha_venta) AS fecha, SUM(total) AS venta_total
-    FROM ventas
-    WHERE fecha_venta BETWEEN fecha_inicio AND fecha_fin
-    GROUP BY DATE(fecha_venta)
-    ORDER BY fecha DESC;
-END //
+    INSERT INTO inventario (id_producto, cantidad, lote, fecha_caducidad)
+    VALUES (NEW.id_producto, NEW.cantidad, NEW.lote, NEW.fecha_caducidad)
+    ON DUPLICATE KEY UPDATE cantidad = cantidad + NEW.cantidad;
 
--- 2. Top productos más vendidos
-CREATE PROCEDURE sp_top_productos(IN top_n INT)
-BEGIN
-    SELECT p.nombre, SUM(dv.cantidad) AS total_vendido, SUM(dv.subtotal) AS ingreso_total
-    FROM detalle_ventas dv
-    JOIN productos p ON dv.id_producto = p.id_producto
-    GROUP BY dv.id_producto
-    ORDER BY total_vendido DESC
-    LIMIT top_n;
-END //
-
--- 3. Rendimiento de ventas por usuario
-CREATE PROCEDURE sp_rendimiento_usuarios()
-BEGIN
-    SELECT u.nombre, u.apellido, COUNT(v.id_venta) AS total_ventas, SUM(v.total) AS monto_total
-    FROM usuarios u
-    LEFT JOIN ventas v ON u.id_usuario = v.id_usuario
-    GROUP BY u.id_usuario
-    ORDER BY monto_total DESC;
-END //
-
--- 4. Productos con bajo stock
-CREATE PROCEDURE sp_productos_bajo_stock(IN limite_stock INT)
-BEGIN
-    SELECT nombre, stock
-    FROM productos
-    WHERE stock < limite_stock
-    ORDER BY stock ASC;
-END //
-
--- 5. Reporte de desperdicios
-CREATE PROCEDURE sp_reporte_desperdicios(IN fecha_inicio DATE, IN fecha_fin DATE)
-BEGIN
-    SELECT p.nombre, SUM(pd.cantidad) AS total_desperdiciado, 
-           SUM(pd.cantidad * p.precio_compra) AS costo_total
-    FROM productos_desperdiciados pd
-    JOIN productos p ON pd.id_producto = p.id_producto
-    WHERE pd.fecha_desperdicio BETWEEN fecha_inicio AND fecha_fin
-    GROUP BY pd.id_producto
-    ORDER BY total_desperdiciado DESC;
-END //
-
--- 6. Margen de ganancia por producto
-CREATE PROCEDURE sp_margen_ganancia()
-BEGIN
-    SELECT p.nombre, 
-           p.precio_venta, 
-           p.precio_compra, 
-           (p.precio_venta - p.precio_compra) AS margen,
-           ((p.precio_venta - p.precio_compra) / p.precio_compra * 100) AS porcentaje_margen
-    FROM productos p
-    ORDER BY porcentaje_margen DESC;
-END //
-
+    INSERT INTO movimientos_inventario (id_inventario, tipo_movimiento, cantidad, id_referencia, tipo_referencia)
+    VALUES (
+        (SELECT id_inventario FROM inventario WHERE id_producto = NEW.id_producto AND lote = NEW.lote),
+        'entrada',
+        NEW.cantidad,
+        NEW.id_compra,
+        'compra'
+    );
+END;
+//
 DELIMITER ;
 
-// Para usar estos procedimientos almacenados, puedes llamarlos así:
-CALL sp_ventas_por_dia('2024-01-01', '2024-12-31');
-CALL sp_top_productos(10);
-CALL sp_rendimiento_usuarios();
-CALL sp_productos_bajo_stock(10);
-CALL sp_reporte_desperdicios('2024-01-01', '2024-12-31');
-CALL sp_margen_ganancia();
+-- Trigger to update inventory after a sale
+DELIMITER //
+CREATE TRIGGER after_sale_detail_insert
+AFTER INSERT ON detalle_ventas
+FOR EACH ROW
+BEGIN
+    UPDATE inventario
+    SET cantidad = cantidad - NEW.cantidad
+    WHERE id_producto = NEW.id_producto
+    AND cantidad >= NEW.cantidad
+    ORDER BY fecha_caducidad ASC
+    LIMIT 1;
 
-Estos reportes proporcionarán al dueño del restaurante información valiosa sobre:
+    INSERT INTO movimientos_inventario (id_inventario, tipo_movimiento, cantidad, id_referencia, tipo_referencia)
+    VALUES (
+        (SELECT id_inventario FROM inventario WHERE id_producto = NEW.id_producto ORDER BY fecha_caducidad ASC LIMIT 1),
+        'salida',
+        NEW.cantidad,
+        NEW.id_venta,
+        'venta'
+    );
+END;
+//
+DELIMITER ;
 
-//Tendencias de ventas diarias
-//Productos más populares
-//Rendimiento de los empleados
-//Gestión de inventario
-//Control de desperdicios
-//Análisis de rentabilidad por producto
+-- Trigger to update inventory after waste recording
+DELIMITER //
+CREATE TRIGGER after_waste_insert
+AFTER INSERT ON productos_desperdiciados
+FOR EACH ROW
+BEGIN
+    UPDATE inventario
+    SET cantidad = cantidad - NEW.cantidad
+    WHERE id_inventario = NEW.id_inventario;
+
+    INSERT INTO movimientos_inventario (id_inventario, tipo_movimiento, cantidad, id_referencia, tipo_referencia)
+    VALUES (
+        NEW.id_inventario,
+        'salida',
+        NEW.cantidad,
+        NEW.id_desperdicio,
+        'desperdicio'
+    );
+END;
+//
+DELIMITER ;
+
+-- View for current inventory levels
+CREATE VIEW v_inventario_actual AS
+SELECT 
+    i.id_inventario,
+    p.id_producto,
+    p.nombre AS producto,
+    i.cantidad,
+    i.lote,
+    i.fecha_caducidad
+FROM 
+    inventario i
+JOIN 
+    productos p ON i.id_producto = p.id_producto
+WHERE 
+    i.cantidad > 0;
+
+-- Stored procedure for inventory valuation
+DELIMITER //
+CREATE PROCEDURE sp_valoracion_inventario()
+BEGIN
+    SELECT 
+        p.id_producto,
+        p.nombre AS producto,
+        SUM(i.cantidad) AS cantidad_total,
+        p.precio_compra,
+        SUM(i.cantidad * p.precio_compra) AS valor_total
+    FROM 
+        inventario i
+    JOIN 
+        productos p ON i.id_producto = p.id_producto
+    GROUP BY 
+        p.id_producto, p.nombre, p.precio_compra;
+END;
+//
+DELIMITER ;
+
+-- Stored procedure for low stock alert
+DELIMITER //
+CREATE PROCEDURE sp_alerta_stock_bajo(IN umbral INT)
+BEGIN
+    SELECT 
+        p.id_producto,
+        p.nombre AS producto,
+        SUM(i.cantidad) AS stock_actual
+    FROM 
+        inventario i
+    JOIN 
+        productos p ON i.id_producto = p.id_producto
+    GROUP BY 
+        p.id_producto, p.nombre
+    HAVING 
+        stock_actual < umbral
+    ORDER BY 
+        stock_actual ASC;
+END;
+//
+DELIMITER ;
