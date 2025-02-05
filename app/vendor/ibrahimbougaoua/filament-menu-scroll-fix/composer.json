@@ -1,0 +1,71 @@
+{
+    "name": "ibrahimbougaoua/filament-menu-scroll-fix",
+    "description": "Now whene a user clicks on an item it sets focus on the selected item without the weird reloading and scrolling up the list, Especially if the user contains a lot of elements he would have to scroll the the selected element manually.",
+    "keywords": [
+        "ibrahimBougaoua",
+        "laravel",
+        "filament-menu-scroll-fix"
+    ],
+    "homepage": "https://github.com/ibrahimbougaoua/filament-menu-scroll-fix",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ibrahim",
+            "email": "ibrahim.bougaoua@etu.usthb.dz",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "filament/filament": "^2.0|^3.0",
+        "illuminate/contracts": "^10.0|^11.0",
+        "spatie/laravel-package-tools": "^1.14.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.0",
+        "nunomaduro/collision": "^7.9",
+        "nunomaduro/larastan": "^2.0.1",
+        "orchestra/testbench": "^8.0",
+        "pestphp/pest": "^2.0",
+        "pestphp/pest-plugin-arch": "^2.0",
+        "pestphp/pest-plugin-laravel": "^2.0",
+        "phpstan/extension-installer": "^1.1",
+        "phpstan/phpstan-deprecation-rules": "^1.0",
+        "phpstan/phpstan-phpunit": "^1.0",
+        "spatie/laravel-ray": "^1.26"
+    },
+    "autoload": {
+        "psr-4": {
+            "FilamentMenuScrollFix\\FilamentMenuScrollFix\\": "src/",
+            "FilamentMenuScrollFix\\FilamentMenuScrollFix\\Database\\Factories\\": "database/factories/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "FilamentMenuScrollFix\\FilamentMenuScrollFix\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": "@php ./vendor/bin/testbench package:discover --ansi",
+        "analyse": "vendor/bin/phpstan analyse",
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage",
+        "format": "vendor/bin/pint"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "FilamentMenuScrollFix\\FilamentMenuScrollFix\\FilamentMenuScrollFixServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
